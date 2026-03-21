@@ -1,2 +1,0 @@
-Откройте Terminal (через Spotlight или /Applications/Utilities).
-Введите команду: sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder
