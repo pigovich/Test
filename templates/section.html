@@ -4,151 +4,421 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}}</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico" />
     <style>
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        :root {
+            --tech-green: #3ADF68;
+            --ozon-blue: #005BFF;
+            --anti-flash-white: #F1F1F1;
+            --dark-cerulean: #134C6E;
+            --prussian-blue: #0A3956;
+            --oxford-blue: #032B44;
+            --btn-primary-bg: var(--ozon-blue);
+            --btn-primary-bg-hover: #0046CC;
+            --btn-danger-bg: #DC3545;
+            --btn-danger-bg-hover: #C82333;
+            --btn-warning-bg: #FFC107;
+            --btn-warning-bg-hover: #E0A800;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'GT Eesti Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--anti-flash-white);
+            color: var(--oxford-blue);
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            background: var(--prussian-blue);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
             margin-bottom: 30px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #e9ecef;
-        }
-        
-        .sections-nav {
-            display: flex;
-            gap: -- 10px;
-            flex-wrap: wrap;
-            margin-bottom: 25px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-        
-        .section-nav-btn {
-            padding: 8px 16px;
-            border: 2px solid #3498db;
-            border-radius: 20px;
-            background: white;
-            color: #3498db;
-            text-decoration: none;
-            font-weight: 500;
-            transition: all 0.3s ease;
-        }
-        
-        .section-nav-btn:hover {
-            background: #3498db;
-            color: white;
-        }
-        
-        .section-nav-btn.active {
-            background: #3498db;
-            color: white;
-        }
-        
-        .empty-section {
-            text-align: center;
-            padding: 40px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        .empty-section h3 {
-            color: #6c757d;
-            margin-bottom: 10px;
-        }
-        
-        .section-info {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
         }
-        
-        .notes-count {
-            background: #e9ecef;
-            color: #6c757d;
-            padding: 5px 12px;
-            border-radius: 15px;
+
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .back-btn {
+            background: var(--dark-cerulean);
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .back-btn:hover {
+            background: var(--ozon-blue);
+            transform: translateY(-2px);
+        }
+
+        /* Form styles */
+        .rename-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            border: 1px solid var(--dark-cerulean);
+        }
+
+        .rename-section h3 {
+            margin-bottom: 15px;
+            color: var(--prussian-blue);
+        }
+
+        .form-group {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .form-group label {
+            font-weight: 500;
+            min-width: 80px;
+        }
+
+        .form-group input {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid var(--dark-cerulean);
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--ozon-blue);
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
             font-size: 14px;
             font-weight: 500;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: var(--ozon-blue);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--btn-primary-bg-hover);
+            transform: translateY(-2px);
+        }
+
+        .btn-warning {
+            background: var(--btn-warning-bg);
+            color: #212529;
+        }
+
+        .btn-warning:hover {
+            background: var(--btn-warning-bg-hover);
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: var(--btn-danger-bg);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: var(--btn-danger-bg-hover);
+            transform: translateY(-2px);
+        }
+
+        .btn-small {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        /* Notes grid */
+        .notes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .note-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            border: 1px solid var(--dark-cerulean);
+        }
+
+        .note-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .note-card h3 {
+            margin-bottom: 10px;
+            color: var(--prussian-blue);
+            font-size: 18px;
+        }
+
+        .note-content {
+            color: var(--dark-cerulean);
+            margin-bottom: 15px;
+            line-height: 1.5;
+            max-height: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .note-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            background: white;
+            border-radius: 10px;
+            border: 1px solid var(--dark-cerulean);
+        }
+
+        .empty-state p {
+            margin-bottom: 20px;
+            color: var(--dark-cerulean);
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--dark-cerulean);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast.success {
+            background: var(--tech-green);
+            color: var(--oxford-blue);
+        }
+
+        .toast.error {
+            background: var(--btn-danger-bg);
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="section-header">
+        <div class="header">
             <h1>{{.Title}}</h1>
-            <a href="/new?section={{.SectionName}}" class="btn btn-primary">+ Добавить в этот раздел</a>
+            <a href="/" class="back-btn">← На главную</a>
         </div>
 
-        <!-- Навигация по разделам -->
-        <div class="sections-nav">
-            <a href="/" class="section-nav-btn">Все заметки</a>
-            {{range .AllSections}}
-            <a href="/section/{{.}}" class="section-nav-btn {{if eq . $.SectionName}}active{{end}}">{{.}}</a>
-            {{end}}
+        <!-- Форма переименования раздела -->
+        <div class="rename-section">
+            <h3>Переименовать раздел</h3>
+            <form action="/rename-section" method="POST" id="renameForm">
+                <div class="form-group">
+                    <label>Новое название:</label>
+                    <input type="text" name="new_section" value="{{.Section}}" required 
+                           placeholder="Введите новое название раздела">
+                    <input type="hidden" name="old_section" value="{{.Section}}">
+                    <button type="submit" class="btn btn-primary">Переименовать</button>
+                </div>
+            </form>
         </div>
 
-        <div class="section-info">
-            <h2>Заметки раздела</h2>
-            <span class="notes-count">{{len .Notes}} заметок</span>
-        </div>
-
+        <!-- Список заметок в разделе -->
+        <h2>Заметки в разделе "{{.Section}}"</h2>
+        
         {{if .Notes}}
         <div class="notes-grid">
             {{range .Notes}}
-            <div class="note-card" onclick="window.location='/view/{{.FullPath}}'">
-                <div class="note-header">
-                    <h3>{{.Title}}</h3>
-                </div>
-                <div class="note-content">{{.ShortContent}}</div>
+            <div class="note-card">
+                <h3>{{.Title}}</h3>
+                <div class="note-content">{{.Content}}</div>
                 <div class="note-actions">
-                    <button class="btn btn-primary" onclick="event.stopPropagation(); copyToClipboard('{{.Title}}')">
-                        Копировать
+                    <button class="btn btn-warning btn-small move-note-btn" 
+                            data-note-path="{{.Path}}"
+                            data-note-title="{{.Title}}">
+                        Переместить
                     </button>
-                    <a href="/edit/{{.FullPath}}" class="btn btn-secondary" onclick="event.stopPropagation();">
-                        Редактировать
-                    </a>
-                    <form action="/delete/{{.FullPath}}" method="POST" 
-                          onsubmit="return confirm('Удалить эту заметку?');" 
-                          style="display: inline;">
-                        <button type="submit" class="btn btn-danger" onclick="event.stopPropagation();">
-                            Удалить
-                        </button>
-                    </form>
+                    <a href="/edit/{{.Path}}" class="btn btn-primary btn-small">Редактировать</a>
+                    <button class="btn btn-danger btn-small delete-note-btn" 
+                            data-note-path="{{.Path}}"
+                            data-note-title="{{.Title}}">
+                        Удалить
+                    </button>
                 </div>
-                <textarea id="hidden-text-{{.Title}}" class="hidden">{{.Content}}</textarea>
             </div>
             {{end}}
         </div>
         {{else}}
-        <div class="empty-section">
-            <h3>В этом разделе пока нет заметок</h3>
-            <p>Создайте первую заметку в этом разделе</p>
-            <a href="/new?section={{.SectionName}}" class="btn btn-primary">Создать первую заметку</a>
+        <div class="empty-state">
+            <p>В этом разделе пока нет заметок</p>
+            <a href="/create" class="btn btn-primary">Создать заметку</a>
         </div>
         {{end}}
     </div>
 
+    <!-- Модальное окно для перемещения заметки -->
+    <div id="moveModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1001; justify-content:center; align-items:center;">
+        <div style="background:white; padding:30px; border-radius:10px; max-width:400px; width:90%;">
+            <h3>Переместить заметку</h3>
+            <p>Заметка: <strong id="moveNoteTitle"></strong></p>
+            <select id="targetSection" class="form-group" style="width:100%; padding:10px; margin:15px 0;">
+                {{range $sectionName, $notesList := .AllSections}}
+                <option value="{{$sectionName}}" {{if eq $sectionName $.Section}}selected{{end}}>{{$sectionName}}</option>
+                {{end}}
+            </select>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button onclick="closeModal()" class="btn btn-warning">Отмена</button>
+                <button onclick="moveNote()" class="btn btn-primary">Переместить</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastContainer"></div>
+
     <script>
-        function copyToClipboard(noteId) {
-            const hiddenTextArea = document.getElementById(`hidden-text-${noteId}`);
-            hiddenTextArea.select();
-            hiddenTextArea.setSelectionRange(0, 99999);
-            document.execCommand('copy');
-            
-            // Показываем уведомление
-            alert('Текст скопирован в буфер обмена!');
+        let currentNotePath = '';
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            toast.onclick = () => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            };
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
         }
 
-        // Добавляем быструю навигацию клавишами
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
-                window.location.href = '/';
-            }
+        function openModal(notePath, noteTitle) {
+            currentNotePath = notePath;
+            document.getElementById('moveNoteTitle').textContent = noteTitle;
+            document.getElementById('moveModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('moveModal').style.display = 'none';
+            currentNotePath = '';
+        }
+
+        function moveNote() {
+            const targetSection = document.getElementById('targetSection').value;
+            if (!targetSection) return;
+
+            fetch('/move-note', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `note_path=${encodeURIComponent(currentNotePath)}&new_section=${encodeURIComponent(targetSection)}`
+            })
+            .then(response => {
+                if (response.ok) {
+                    showToast('Заметка перемещена', 'success');
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    showToast('Ошибка при перемещении', 'error');
+                }
+            })
+            .catch(() => showToast('Ошибка сети', 'error'));
+            closeModal();
+        }
+
+        // Обработчики для кнопок перемещения и удаления
+        document.querySelectorAll('.move-note-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const notePath = btn.dataset.notePath;
+                const noteTitle = btn.dataset.noteTitle;
+                openModal(notePath, noteTitle);
+            });
         });
+
+        document.querySelectorAll('.delete-note-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const notePath = btn.dataset.notePath;
+                const noteTitle = btn.dataset.noteTitle;
+                if (confirm(`Удалить заметку "${noteTitle}"?`)) {
+                    fetch('/delete/' + encodeURIComponent(notePath), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                    })
+                    .then(response => {
+                        if (response.ok) {
+                            showToast('Заметка удалена', 'success');
+                            setTimeout(() => window.location.reload(), 1000);
+                        } else {
+                            showToast('Ошибка при удалении', 'error');
+                        }
+                    })
+                    .catch(() => showToast('Ошибка сети', 'error'));
+                }
+            });
+        });
+
+        // Обработка flash-сообщений
+        const flashMessage = document.body.getAttribute('data-flash');
+        if (flashMessage) {
+            showToast(flashMessage, 'success');
+        }
     </script>
 </body>
 </html>

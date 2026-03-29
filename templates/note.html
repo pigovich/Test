@@ -4,7 +4,7 @@
     <link rel="stylesheet" href="/static/style.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.Title}}</title>
+    <title>{{.Title}} - Просмотр заметки</title>
     <style>
         * {
             box-sizing: border-box;
@@ -41,6 +41,7 @@
         .header h1 {
             color: #2c3e50;
             margin: 0;
+            font-size: 24px;
         }
         
         .btn {
@@ -52,12 +53,13 @@
             border-radius: 5px;
             border: none;
             cursor: pointer;
-            font-size: -5px;
+            font-size: 14px;
             transition: background-color 0.3s;
         }
         
         .btn:hover {
             background: #2980b9;
+            transform: translateY(-2px);
         }
         
         .btn-primary {
@@ -76,6 +78,16 @@
             background: #c0392b;
         }
         
+        .section-badge {
+            display: inline-block;
+            background: #3498db;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            margin-bottom: 15px;
+        }
+        
         .note-content {
             background: #f8f9fa;
             padding: 25px;
@@ -84,6 +96,7 @@
             line-height: 1.6;
             font-size: 16px;
             border-left: 4px solid #3498db;
+            margin-top: 20px;
         }
         
         .note-actions {
@@ -92,36 +105,112 @@
             margin-top: 30px;
             flex-wrap: wrap;
         }
+        
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #2c3e50;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .toast.success {
+            background: #27ae60;
+        }
+        
+        .toast.error {
+            background: #e74c3c;
+        }
     </style>
 </head>
-<body>
+<body data-flash="{{.Flash}}">
     <div class="container">
         <div class="header">
-            <a href="/section/{{.Section}}" class="btn">← Назад к разделу</a>
+            <a href="/" class="btn">← На главную</a>
             <h1>{{.Title}}</h1>
         </div>
 
+        <div class="section-badge">Раздел: {{.Section}}</div>
+
         <div class="note-content">
-            {{.Note.Content}}
+            {{.Content}}
         </div>
 
-        <极 class="note-actions">
-            <button class="btn btn-primary" onclick="copyToClipboard()">Копировать текст</button>
-            <a href="/edit/{{.Note.FullPath}}" class="btn">Редактировать</a>
-            <form action="/delete/{{.Note.FullPath}}" method="POST" style="display:inline;">
-                <button type="submit" class="btn btn-danger" onclick="return confirm('Удалить эту заметку?')">Удалить</button>
-            </form>
+        <div class="note-actions">
+            <button class="btn btn-primary" onclick="copyToClipboard()">📋 Копировать текст</button>
+            <a href="/edit/{{.Path}}" class="btn">✏️ Редактировать</a>
+            <button class="btn btn-danger" onclick="deleteNote()">🗑️ Удалить</button>
         </div>
     </div>
 
-    <textarea id="hidden-text" style="position: absolute; left: -9999px;">{{.Note.Content}}</textarea>
+    <div id="toastContainer"></div>
 
     <script>
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            toast.onclick = () => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            };
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
         function copyToClipboard() {
-            const hiddenTextArea = document.getElementById('hidden-text');
-            hiddenTextArea.select();
-            document.execCommand('copy');
-            alert('Текст скопирован в буфер обмена!');
+            const content = `{{.Content | js}}`;
+            navigator.clipboard.writeText(content)
+                .then(() => showToast('Текст скопирован!', 'success'))
+     .catch(() => showToast('Не удалось скопировать текст', 'error'));
+        }
+
+        function deleteNote() {
+            if (confirm('Вы уверены, что хотите удалить эту заметку? Это действие нельзя отменить.')) {
+                fetch('/delete/' + encodeURIComponent('{{.Path}}'), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                })
+                .then(response => {
+                    if (response.ok) {
+                        showToast('Заметка успешно удалена', 'success');
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 1000);
+                    } else {
+                        showToast('Ошибка при удалении', 'error');
+                    }
+                })
+                .catch(err => {
+                    console.error('Ошибка:', err);
+                    showToast('Ошибка при удалении', 'error');
+                });
+            }
+        }
+
+        // Обработка flash-сообщений
+        const flashMessage = document.body.getAttribute('data-flash');
+        if (flashMessage) {
+            showToast(flashMessage, 'success');
         }
     </script>
 </body>

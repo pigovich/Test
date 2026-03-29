@@ -1,0 +1,18 @@
+**Канал департамента разработки ML-платформы. Здесь публикуются релизы и обновления разрабатываемых продуктов ✅**
+
+:mlll::help-text: **Тут вы найдете информацию о продуктах [Кодовый ассистент](https://ml-help.prod.a.o3.ru/ml-help/o3-llm/) и [ИИ-помощник DeepSeek](https://deepseek.o3t.ru)**
+
+**Правила:**
+🔹 Для обращения в поддержку по Кодовому ассистенту/Плагину o3 cli - [завести заявку](https://jira.o3.ru/servicedesk/customer/portal/47/create/8968)  
+🔹 Для обращения в поддержку по ИИ-помощнику DeepSeek - [завести заявку](https://jira.o3.ru/servicedesk/customer/portal/47/create/9057)  
+🔹 По вопросам использования LLM в проектах просьба обращаться в канал ~project-ml-infra 
+
+**Ответственные:**
+🤖 Кодовый ассистент и плагин o3 cli 💻  — https://staff.o3t.ru/profile/andreosipov / https://staff.o3t.ru/profile/irylkov 
+ :deepseek: ИИ-помощник DeepSeek https://staff.o3t.ru/profile/andreosipov / 
+
+**Что ещё посмотреть?**
+💻 [Инструкция Кодовый ассистент/Плагин o3 cli](https://ml-help.prod.a.o3.ru/ml-help/o3-llm/) 
+📄[Заполнить форму ОС Кодовый ассистент/Плагин o3 cli](https://forms.o3.ru/form/141a5e79d5776ac83099b69c13da923103)
+ 🤖 [Инструкция DeepSeek](https://ml-help.prod.a.o3.ru/ml-help/deepseek/)
+📄 [Заполнить форму ОС DeepSeek](https://forms.ozon.ru/form/148375cea6e94f5edb8104928b7a087e2e)

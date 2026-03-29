@@ -30,7 +30,7 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'GT Eesti Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.6;
             color: var(--oxford-blue);
             background-color: var(--anti-flash-white);
@@ -78,7 +78,7 @@
             margin: 0;
             font-size: 24px;
             font-weight: 600;
-            color: white; /* БЕЛЫЙ ЦВЕТ ДЛЯ ЗАГОЛОВКА */
+            color: white;
         }
         
         .form-container {
@@ -104,6 +104,7 @@
             font-size: 16px;
             transition: border-color 0.3s;
             background: white;
+            font-family: inherit;
         }
         
         .form-select:focus, .form-input:focus, .form-textarea:focus {
@@ -138,7 +139,6 @@
             border-top: 1px solid var(--anti-flash-white);
         }
         
-        /* ОБНОВЛЕННЫЕ СТИЛИ КНОПОК */
         .btn {
             display: inline-block;
             padding: 12px 24px;
@@ -160,7 +160,6 @@
             box-shadow: 0 4px 8px rgba(10, 57, 86, 0.2);
         }
         
-        /* БЕЛАЯ КНОПКА С СИНЕЙ РАМКОЙ ДЛЯ "СОЗДАТЬ" */
         .btn-primary {
             background: white;
             color: var(--dark-cerulean);
@@ -185,7 +184,6 @@
             border-color: var(--prussian-blue);
         }
         
-        /* Стили для toast-уведомлений */
         .toast {
             position: fixed;
             top: 20px;
@@ -208,7 +206,7 @@
             transform: translateY(0);
         }
         
-        .toast.success { background: var(--tech-green); border-color: #2ECC71; }
+        .toast.success { background: var(--tech-green); border-color: #2ECC71; color: var(--oxford-blue); }
         .toast.error { background: var(--btn-delete-bg); border-color: var(--btn-delete-bg-hover); }
         .toast.info { background: var(--ozon-blue); border-color: #0046CC; }
         
@@ -246,16 +244,14 @@
 <body>
     <div class="container">
         <header class="header">
-            <a href="/" class="back-btn">← Назад</a>
+            <a href="/" class="back-btn">← На главную</a>
             <h1>{{.Title}}</h1>
         </header>
         <main class="form-container">
             <form action="/save" method="POST" class="note-form" id="noteForm">
-                <input type="hidden" id="selectedSection" name="section" value="">
-                
                 <div class="form-group">
                     <label>Раздел:</label>
-                    <select id="sectionSelect" class="form-select">
+                    <select id="sectionSelect" name="section" class="form-select">
                         <option value="">-- Выберите раздел --</option>
                         {{range .Sections}}
                         <option value="{{.}}">{{.}}</option>
@@ -280,85 +276,155 @@
                 </div>
                 
                 <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Создать заметку</button>
+                    <button type="submit" class="btn btn-primary" id="submitBtn">Создать заметку</button>
                     <a href="/" class="btn btn-secondary">Отмена</a>
                 </div>
             </form>
         </main>
     </div>
-    <!-- Контейнер для уведомлений -->
+    
     <div id="toastContainer"></div>
     
     <script>
-    // Функция показа уведомлений
-    function showToast(message, type = 'info') {
-        const container = document.getElementById('toastContainer');
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.textContent = message;
-        toast.onclick = () => removeToast(toast);
+        function showToast(message, type) {
+            type = type || 'info';
+            var container = document.getElementById('toastContainer');
+            if (!container) return;
+            var toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            toast.textContent = message;
+            toast.onclick = function() { removeToast(toast); };
+            
+            container.appendChild(toast);
+            
+            requestAnimationFrame(function() {
+                toast.classList.add('show');
+            });
+            
+            setTimeout(function() { removeToast(toast); }, 3000);
+        }
         
-        container.appendChild(toast);
+        function removeToast(toast) {
+            toast.classList.remove('show');
+            setTimeout(function() {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }
         
-        requestAnimationFrame(() => {
-            toast.classList.add('show');
+        function toggleSectionInput() {
+            var select = document.getElementById('sectionSelect');
+            var newSectionInput = document.getElementById('newSectionInput');
+            
+            if (select.value === '__new__') {
+                newSectionInput.style.display = 'block';
+                newSectionInput.setAttribute('required', 'required');
+                newSectionInput.focus();
+                // Очищаем скрытое поле section
+                document.querySelector('select[name="section"]').removeAttribute('name');
+                document.querySelector('select[name="section"]').setAttribute('name', '');
+            } else {
+                newSectionInput.style.display = 'none';
+                newSectionInput.removeAttribute('required');
+                newSectionInput.value = '';
+                // Восстанавливаем name для select
+                document.querySelector('select').setAttribute('name', 'section');
+            }
+        }
+        
+        // Валидация и отправка формы
+        document.getElementById('noteForm').addEventListener('submit', function(e) {
+            var select = document.getElementById('sectionSelect');
+            var newSectionInput = document.getElementById('newSectionInput');
+            var sectionError = document.getElementById('sectionError');
+            var title = document.getElementById('title').value.trim();
+            var content = document.getElementById('content').value.trim();
+            var submitBtn = document.getElementById('submitBtn');
+            
+            sectionError.style.display = 'none';
+            
+            // Проверка названия
+            if (!title) {
+                e.preventDefault();
+                showToast('Введите название заметки', 'error');
+                document.getElementById('title').focus();
+                return false;
+            }
+            
+            if (title.length > 255) {
+                e.preventDefault();
+                showToast('Название слишком длинное (максимум 255 символов)', 'error');
+                document.getElementById('title').focus();
+                return false;
+            }
+            
+            // Проверка содержимого
+            if (!content) {
+                e.preventDefault();
+                showToast('Введите содержимое заметки', 'error');
+                document.getElementById('content').focus();
+                return false;
+            }
+            
+            // Проверка раздела
+            if (select.value === '' && newSectionInput.value.trim() === '') {
+                e.preventDefault();
+                sectionError.style.display = 'block';
+                sectionError.textContent = 'Пожалуйста, выберите раздел или создайте новый';
+                showToast('Выберите раздел или создайте новый', 'error');
+                return false;
+            }
+            
+            if (select.value === '__new__') {
+                if (newSectionInput.value.trim() === '') {
+                    e.preventDefault();
+                    sectionError.style.display = 'block';
+                    sectionError.textContent = 'Пожалуйста, введите название нового раздела';
+                    showToast('Введите название нового раздела', 'error');
+                    newSectionInput.focus();
+                    return false;
+                }
+                // Убеждаемся, что section поле пустое, а new_section заполнено
+                select.removeAttribute('name');
+                newSectionInput.setAttribute('name', 'new_section');
+            } else if (select.value !== '') {
+                // Убеждаемся, что new_section пустое, а section заполнено
+                newSectionInput.removeAttribute('name');
+                select.setAttribute('name', 'section');
+            }
+            
+            // Проверка на недопустимые символы
+            var invalidChars = /[<>:"\/\\|?*]/g;
+            var sectionName = select.value === '__new__' ? newSectionInput.value.trim() : select.value;
+            
+            if (invalidChars.test(sectionName)) {
+                e.preventDefault();
+                showToast('Название раздела содержит недопустимые символы', 'error');
+                return false;
+            }
+            
+            if (invalidChars.test(title)) {
+                e.preventDefault();
+                showToast('Название заметки содержит недопустимые символы', 'error');
+                return false;
+            }
+            
+            // Деактивируем кнопку, чтобы избежать двойной отправки
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Создание...';
         });
         
-        setTimeout(() => removeToast(toast), 3000);
-        return toast;
-    }
-    function removeToast(toast) {
-        toast.classList.remove('show');
-        setTimeout(() => {
-            if (toast.parentNode) {
-                toast.parentNode.removeChild(toast);
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            toggleSectionInput();
+            document.getElementById('sectionSelect').addEventListener('change', toggleSectionInput);
+            
+            var flashMessage = document.body.getAttribute('data-flash');
+            if (flashMessage && flashMessage !== '') {
+                showToast(flashMessage, 'success');
             }
-        }, 300);
-    }
-    function toggleSectionInput() {
-        const select = document.getElementById('sectionSelect');
-        const newSectionInput = document.getElementById('newSectionInput');
-        const hiddenSectionInput = document.getElementById('selectedSection');
-        
-        if (select.value === '__new__') {
-            newSectionInput.style.display = 'block';
-            newSectionInput.setAttribute('required', 'required');
-            hiddenSectionInput.value = '';
-            newSectionInput.focus();
-        } else {
-            newSectionInput.style.display = 'none';
-            newSectionInput.removeAttribute('required');
-            hiddenSectionInput.value = select.value;
-        }
-    }
-    
-    // Валидация формы
-    document.getElementById('noteForm').addEventListener('submit', function(e) {
-        const select = document.getElementById('sectionSelect');
-        const newSectionInput = document.getElementById('newSectionInput');
-        const sectionError = document.getElementById('sectionError');
-        
-        sectionError.style.display = 'none';
-        
-        if (select.value === '' && newSectionInput.value === '') {
-            e.preventDefault();
-            sectionError.style.display = 'block';
-            return false;
-        }
-        
-        if (select.value === '__new__' && newSectionInput.value.trim() === '') {
-            e.preventDefault();
-            sectionError.style.display = 'block';
-            sectionError.textContent = 'Пожалуйста, введите название нового раздела';
-            return false;
-        }
-    });
-    
-    // Инициализация
-    document.addEventListener('DOMContentLoaded', function() {
-        toggleSectionInput();
-        document.getElementById('sectionSelect').addEventListener('change', toggleSectionInput);
-    });
+        });
     </script>
 </body>
 </html>

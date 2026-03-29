@@ -169,7 +169,6 @@
             user-select: none;
         }
 
-        /* Кнопка «Сохранить изменения» */
         .btn-primary {
             background: white;
             color: var(--dark-cerulean);
@@ -182,7 +181,6 @@
             border-color: var(--prussian-blue);
         }
 
-        /* Кнопка «Отмена» */
         .btn-secondary {
             background: var(--dark-cerulean);
             color: white;
@@ -212,7 +210,6 @@
             display: block;
         }
 
-        /* Toast уведомления */
         .toast {
             position: fixed;
             top: 20px;
@@ -251,7 +248,6 @@
             border-color: var(--btn-primary-bg-hover);
         }
 
-        /* Состояние загрузки */
         .form-loading {
             position: relative;
             pointer-events: none;
@@ -273,7 +269,6 @@
             backdrop-filter: blur(2px);
         }
 
-        /* ответ */
         @media (max-width: 768px) {
             body {
                 padding: 10px;
@@ -350,6 +345,7 @@
     <script>
     function showToast(message, type = 'info') {
         const container = document.getElementById('toastContainer');
+        if (!container) return;
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
         toast.textContent = message;
@@ -414,6 +410,18 @@
             return;
         }
         
+        // Валидация названия
+        const title = params.get('title');
+        if (!title || title.length === 0) {
+            showToast('Введите название заметки', 'error');
+            return;
+        }
+        
+        if (title.length > 255) {
+            showToast('Название слишком длинное (максимум 255 символов)', 'error');
+            return;
+        }
+        
         submitBtn.disabled = true;
         submitBtn.textContent = 'Сохранение...';
         form.classList.add('form-loading');
@@ -429,25 +437,30 @@
 
             if (response.ok) {
                 const message = await response.text();
-                showToast(message, 'success');
+                showToast(message || 'Заметка успешно обновлена', 'success');
                 
                 const section = params.get('section') || params.get('new_section');
-                const title = params.get('title');
-                const newPath = encodeURIComponent(section + '/' + title);
+                const noteTitle = params.get('title');
+                const newPath = encodeURIComponent(section) + '/' + encodeURIComponent(noteTitle);
                 
                 setTimeout(() => {
                     window.location.href = '/view/' + newPath;
                 }, 1500);
             } else {
-                const errorText = await response.text();
+                let errorText = await response.text();
+                if (response.status === 400) {
+                    errorText = errorText || 'Некорректные данные';
+                } else if (response.status === 500) {
+                    errorText = 'Ошибка на сервере';
+                }
                 showToast('Ошибка: ' + errorText, 'error');
             }
         } catch (error) {
             console.error('Ошибка:', error);
-            showToast('Ошибка соединения', 'error');
+            showToast('Ошибка соединения с сервером', 'error');
         } finally {
             submitBtn.disabled = false;
-            submitBtn.textContent = 'Сохранить изменения';
+            submitBtn.textContent = '💾 Сохранить изменения';
             form.classList.remove('form-loading');
         }
     }
@@ -462,9 +475,16 @@
         const content = document.getElementById('content').value.trim();
         
         sectionError.style.display = 'none';
+        sectionError.textContent = '';
         
         if (!title) {
             showToast('Введите название заметки', 'error');
+            document.getElementById('title').focus();
+            return;
+        }
+        
+        if (title.length > 255) {
+            showToast('Название слишком длинное (максимум 255 символов)', 'error');
             document.getElementById('title').focus();
             return;
         }
@@ -478,13 +498,29 @@
         if (select.value === '' && newSectionInput.value.trim() === '') {
             sectionError.style.display = 'block';
             sectionError.textContent = 'Пожалуйста, выберите раздел или создайте новый';
+            sectionError.classList.add('show');
             return;
         }
         
         if (select.value === '__new__' && newSectionInput.value.trim() === '') {
             sectionError.style.display = 'block';
             sectionError.textContent = 'Пожалуйста, введите название нового раздела';
+            sectionError.classList.add('show');
             newSectionInput.focus();
+            return;
+        }
+        
+        // Проверка на недопустимые символы в названии раздела и заметки
+        const invalidChars = /[<>:"/\\|?*]/g;
+        const sectionName = select.value === '__new__' ? newSectionInput.value.trim() : select.value;
+        
+        if (invalidChars.test(sectionName)) {
+            showToast('Название раздела содержит недопустимые символы', 'error');
+            return;
+        }
+        
+        if (invalidChars.test(title)) {
+            showToast('Название заметки содержит недопустимые символы', 'error');
             return;
         }
 
@@ -508,7 +544,7 @@
         document.getElementById('sectionSelect').addEventListener('change', toggleSectionInput);
         
         const flashMessage = document.body.getAttribute('data-flash');
-        if (flashMessage) {
+        if (flashMessage && flashMessage !== '') {
             showToast(flashMessage, 'success');
         }
     });

@@ -1,0 +1,1 @@
+ Если у Вас осталась активная сессия, то вы можете самостоятельно удалить второй фактор[ ТУТ](https://sso.o3.ru/security/identification-settings), а затем [Настроить](https://confluence.o3.ru/pages/viewpage.action?pageId=293634787) повторно.

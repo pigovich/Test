@@ -341,12 +341,29 @@
             min-height: auto;
             transition: all 0.3s ease;
             box-sizing: border-box;
+            cursor: grab;
+        }
+
+        .section-item:active {
+            cursor: grabbing;
         }
 
         .section-item:hover {
             background: var(--card-bg-hover);
             box-shadow: 0 4px 8px var(--shadow-color-hover);
             transform: translateY(-2px);
+        }
+
+        /* Стили для drag-and-drop */
+        .sortable-drag {
+            opacity: 0.5;
+            background: var(--card-bg-hover);
+            cursor: grabbing;
+        }
+        .sortable-ghost {
+            opacity: 0.3;
+            background: var(--tech-green);
+            border: 2px dashed var(--ozon-blue);
         }
 
         .section-header {
@@ -608,23 +625,23 @@
         </header>
 
         <nav class="sections-nav">
-            <div class="sections-grid">
-                {{range $section, $notes := .Sections}}
-                <div class="section-item">
+            <div class="sections-grid" id="sectionsGrid">
+                {{range $index, $section := .Sections}}
+                <div class="section-item" data-section-name="{{$section.Name}}" data-section-index="{{$index}}">
                     <div class="section-header">
-                        <a href="#section-{{$section | urlquery}}" class="section-link" data-section="{{$section}}">
-                            {{$section}}
+                        <a href="#section-{{$section.Name | urlquery}}" class="section-link" data-section="{{$section.Name}}">
+                            {{$section.Name}}
                         </a>
-                        <span class="note-count">{{len $notes}}</span>
+                        <span class="note-count">{{len $section.Notes}}</span>
                     </div>
                     <div class="section-actions">
-                        <a href="/edit-section/{{$section | urlquery}}" class="btn btn-warning btn-small">
+                        <a href="/edit-section/{{$section.Name | urlquery}}" class="btn btn-warning btn-small">
                             Редактировать
                         </a>
-                        {{if ne $section "Общие"}}
+                        {{if ne $section.Name "Общие"}}
                         <button class="btn btn-danger btn-small" 
-                                data-section-name="{{$section}}" 
-                                data-note-count="{{len $notes}}">
+                                data-section-name="{{$section.Name}}" 
+                                data-note-count="{{len $section.Notes}}">
                             Удалить
                         </button>
                         {{end}}
@@ -635,15 +652,15 @@
         </nav>
 
         <main class="main-content">
-            {{range $section, $notes := .Sections}}
-            <section class="section" id="section-{{$section | urlquery}}" data-section-name="{{$section}}">
+            {{range $section := .Sections}}
+            <section class="section" id="section-{{$section.Name | urlquery}}" data-section-name="{{$section.Name}}">
                 <h2 class="section-title">
-                    {{$section}} 
-                    <span class="note-count">{{len $notes}}</span>
+                    {{$section.Name}} 
+                    <span class="note-count">{{len $section.Notes}}</span>
                 </h2>
                 <div class="notes-grid">
-                    {{range $notes}}
-                    <article class="note-card" data-note-path="{{.Path}}" data-note-content="{{.Content}}">
+                    {{range $section.Notes}}
+                    <article class="note-card" data-section-name="{{$section.Name}}" data-note-title="{{.Title}}" data-note-content="{{.Content}}">
                         <h3>{{.Title}}</h3>
                         <p class="note-content">{{.Content}}</p>
                         <div class="note-actions">
@@ -673,6 +690,7 @@
     <!-- Контейнер для уведомлений -->
     <div id="toastContainer"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script>
     // Функции для управления темой
     function setTheme(theme) {
@@ -777,16 +795,51 @@
         }
     });
 
+    // Инициализация SortableJS для перетаскивания категорий
+    const sectionsGrid = document.getElementById('sectionsGrid');
+    if (sectionsGrid) {
+        new Sortable(sectionsGrid, {
+            animation: 300,
+            handle: '.section-item',
+            ghostClass: 'sortable-ghost',
+            dragClass: 'sortable-drag',
+            onEnd: function() {
+                const items = sectionsGrid.querySelectorAll('.section-item');
+                const newOrder = Array.from(items).map(item => item.getAttribute('data-section-name'));
+                
+                fetch('/reorder-sections', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(newOrder),
+                })
+                .then(response => {
+                    if (response.ok) {
+                        showToast('Порядок разделов сохранён', 'success');
+                    } else {
+                        showToast('Ошибка при сохранении порядка', 'error');
+                    }
+                })
+                .catch(() => showToast('Ошибка сети', 'error'));
+            }
+        });
+    }
+
     // Обработчики кликов по документу
     document.addEventListener('click', (e) => {
         // Карточки заметок
         const noteCard = e.target.closest('.note-card');
         if (noteCard) {
-            const path = noteCard.dataset.notePath;
+            const section = noteCard.dataset.sectionName;
+            const title = noteCard.dataset.noteTitle;
             const content = noteCard.dataset.noteContent;
 
             if (e.target === noteCard || !e.target.closest('.note-actions')) {
-                window.location.href = '/view/' + encodeURIComponent(path);
+                if (section && title) {
+                    // Формируем правильный URL: /view/раздел/название
+                    window.location.href = '/view/' + encodeURIComponent(section) + '/' + encodeURIComponent(title);
+                }
                 return;
             }
 
@@ -803,7 +856,9 @@
             if (e.target.classList.contains('delete-btn')) {
                 e.stopPropagation();
                 if (confirm('Удалить эту заметку?')) {
-                    fetch('/delete/' + encodeURIComponent(path), {
+                    // Для удаления используем полный путь: раздел/название
+                    const fullPath = encodeURIComponent(section + '/' + title);
+                    fetch('/delete/' + fullPath, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
                     }).then(response => {

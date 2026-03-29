@@ -30,16 +30,16 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'GT Eesti Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.6;
             color: var(--oxford-blue);
             background-color: var(--anti-flash-white);
+            padding: 20px;
         }
         
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 20px;
         }
         
         .header {
@@ -48,25 +48,13 @@
             align-items: center;
             margin-bottom: 30px;
             padding-bottom: 20px;
-            border-bottom: xx2px solid var(--prussian-blue);
+            border-bottom: 2px solid var(--prussian-blue);
         }
         
         .header h1 {
             color: var(--prussian-blue);
             font-size: 28px;
             font-weight: 600;
-        }
-        
-        .header nav a {
-            color: var(--ozon-blue);
-            text-decoration: none;
-            padding: 10px 15px;
-            border-radius: 5px;
-            transition: background-color 0.3s;
-        }
-        
-        .header nav a:hover {
-            background-color: var(--anti-flash-white);
         }
         
         .section-edit-container {
@@ -117,7 +105,6 @@
             border-color: var(--ozon-blue);
         }
         
-        /* ОБНОВЛЕННЫЕ СТИЛИ КНОПОК как в вашем примере */
         .btn {
             display: inline-block;
             padding: 8px 16px;
@@ -256,11 +243,6 @@
             border-color: var(--ozon-blue);
         }
         
-        .note-actions .btn {
-            padding: 8px 16px;
-            font-size: 14px;
-        }
-        
         .modal {
             display: none;
             position: fixed;
@@ -311,13 +293,6 @@
             color: var(--dark-cerulean);
         }
         
-        .empty-state i {
-            font-size: 48px;
-            margin-bottom: 15px;
-            opacity: 0.5;
-        }
-        
-        /* Стили для toast-уведомлений */
         .toast {
             position: fixed;
             top: 20px;
@@ -339,7 +314,7 @@
             transform: translateY(0);
         }
         
-        .toast.success { background: var(--tech-green); }
+        .toast.success { background: var(--tech-green); color: var(--oxford-blue); }
         .toast.error { background: var(--btn-delete-bg); }
         .toast.info { background: var(--ozon-blue); }
         
@@ -395,50 +370,56 @@
                 </form>
             </div>
             <div class="notes-list">
-                <h2>📝 Заметки в разделе ({{len .Notes}})</h2>
-                {{if .Notes}}
-                {{range .Notes}}
-                <div class="note-item">
-                    <div class="note-content">
-                        <h3>{{.Title}}</h3>
-                        <p>{{.Content}}</p>
-                    </div>
-                    <div class="note-actions">
-                        <select onchange="moveNote(this, '{{.Path}}')">
-                            <option value="">📂 Переместить в...</option>
-                            {{range $sectionName, $notes := $.AllSections}}
-                                {{if ne $sectionName $.Section}}
-                                <option value="{{$sectionName}}">{{$sectionName}}</option>
-                                {{end}}
-                            {{end}}
-                            <option value="__new__">➕ Новый раздел...</option>
-                        </select>
-                        <a href="/edit/{{.Path}}" class="btn btn-edit btn-small">Редактировать</a>
-                        <a href="/view/{{.Path}}" class="btn btn-primary btn-small">Просмотреть</a>
-                    </div>
-                </div>
+    <h2>📝 Заметки в разделе ({{len .Notes}})</h2>
+    {{if .Notes}}
+    {{range .Notes}}
+    <div class="note-item">
+        <div class="note-content">
+            <h3>{{.Title}}</h3>
+            <p>{{.Content}}</p>
+        </div>
+        <div class="note-actions">
+            <select onchange="moveNote(this, '{{.Path}}')">
+                <option value="">📂 Переместить в...</option>
+                {{range $sectionName, $notes := $.AllSections}}
+                    {{if ne $sectionName $.Section}}
+                    <option value="{{$sectionName}}">{{$sectionName}}</option>
+                    {{end}}
                 {{end}}
-                {{else}}
-                <div class="empty-state">
-                    <div>📁</div>
-                    <h3>В этом разделе пока нет заметок</h3>
-                    <p>Создайте первую заметку, чтобы она появилась здесь</p>
-                </div>
-                {{end}}
-            </div>
-            <div class="danger-zone">
-                <h2>⚠️ Опасная зона</h2>
-                <p style="margin-bottom: 15px; color: var(--dark-cerulean);">
-                    Удаление раздела приведет к безвозвратному удалению всех заметок внутри него.
-                    Это действие нельзя отменить!
-                </p>
-                <form action="/delete-section/{{.Section | urlquery}}" method="POST" 
-                      onsubmit="return confirm('Вы уверены, что хотите удалить раздел &quot;{{.Section}}&quot; и все его заметки? Это действие нельзя отменить!')">
-                    <button type="submit" class="btn btn-danger">🗑️ Удалить раздел и все заметки</button>
-                </form>
-            </div>
+                <option value="__new__">➕ Новый раздел...</option>
+            </select>
+            <a href="/edit/{{.Path | urlquery}}" class="btn btn-edit btn-small">Редактировать</a>
+            <a href="/view/{{.Path | urlquery}}" class="btn btn-primary btn-small">Просмотреть</a>
         </div>
     </div>
+    {{end}}
+    {{else}}
+    <div class="empty-state">
+        <div>📁</div>
+        <h3>В этом разделе пока нет заметок</h3>
+        <p>Создайте первую заметку, чтобы она появилась здесь</p>
+    </div>
+    {{end}}
+</div>
+            <div class="danger-zone">
+    <h2>⚠️ Опасная зона</h2>
+    <p style="margin-bottom: 15px; color: var(--dark-cerulean);">
+        Удаление раздела приведет к безвозвратному удалению всех заметок внутри него.
+        Это действие нельзя отменить!
+    </p>
+    <form action="/delete-section/{{.Section | urlquery}}" method="POST" 
+          onsubmit="return confirmDeleteSection();">
+        <button type="submit" class="btn btn-danger">🗑️ Удалить раздел и все заметки</button>
+    </form>
+</div>
+
+<script>
+function confirmDeleteSection() {
+    var sectionName = "{{.Section}}";
+    return confirm('Вы уверены, что хотите удалить раздел "' + sectionName + '" и все его заметки? Это действие нельзя отменить!');
+}
+</script>
+    
     <div id="newSectionModal" class="modal">
         <div class="modal-content">
             <h3>Создать новый раздел</h3>
@@ -456,259 +437,204 @@
             </form>
         </div>
     </div>
+    
     <div id="toastContainer"></div>
+    
     <script>
-// Функция показа уведомлений
-function showToast(message, type = 'info') {
-    const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.textContent = message;
-    toast.onclick = () => removeToast(toast);
-    
-    container.appendChild(toast);
-    
-    requestAnimationFrame(() => {
-        toast.classList.add('show');
-    });
-    
-    setTimeout(() => removeToast(toast), 3000);
-}
-function removeToast(toast) {
-    toast.classList.remove('show');
-    setTimeout(() => {
-        if (toast.parentNode) {
-            toast.parentNode.removeChild(toast);
+        // Функция показа уведомлений
+        function showToast(message, type) {
+            type = type || 'info';
+            var container = document.getElementById('toastContainer');
+            if (!container) return;
+            var toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            toast.textContent = message;
+            toast.onclick = function() { removeToast(toast); };
+            
+            container.appendChild(toast);
+            
+            requestAnimationFrame(function() {
+                toast.classList.add('show');
+            });
+            
+            setTimeout(function() { removeToast(toast); }, 3000);
         }
-    }, 300);
-}
-// Функция переименования раздела
-function renameSection(event) {
-    event.preventDefault();
-    
-    const oldSection = document.querySelector('input[name="old_section"]').value;
-    const newSection = document.querySelector('input[name="new_section"]').value;
-    
-    console.log('Отправка запроса переименования:', oldSection, '->', newSection);
-    
-    const params = new URLSearchParams();
-    params.append('old_section', oldSection);
-    params.append('new_section', newSection);
-    
-    showToast('Переименование...', 'info');
-    
-    fetch('/rename-section', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-        },
-        body: params.toString()
-    })
-    .then(response => {
-        if (response.ok) {
-            showToast('✅ Раздел успешно переименован', 'success');
-            // Обновляем страницу с новым URL
-            setTimeout(() => {
-                // Кодируем новое имя раздела для URL
-                const encodedSection = encodeURIComponent(newSection);
-                window.location.href = `/edit-section/${encodedSection}`;
-            }, 1500);
-        } else {
-            return response.text().then(text => {
-                throw new Error(text || `Ошибка сервера: ${response.status}`);
+        
+        function removeToast(toast) {
+            toast.classList.remove('show');
+            setTimeout(function() {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }
+        
+        // Функция переименования раздела
+        function renameSection(event) {
+            event.preventDefault();
+            
+            var oldSection = document.querySelector('input[name="old_section"]').value;
+            var newSection = document.querySelector('input[name="new_section"]').value;
+            
+            if (!newSection || newSection.trim() === '') {
+                showToast('Введите название раздела', 'error');
+                return;
+            }
+            
+            var params = new URLSearchParams();
+            params.append('old_section', oldSection);
+            params.append('new_section', newSection);
+            
+            showToast('Переименование...', 'info');
+            
+            fetch('/rename-section', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                },
+                body: params.toString()
+            })
+            .then(function(response) {
+                if (response.ok) {
+                    showToast('Раздел успешно переименован', 'success');
+                    setTimeout(function() {
+                        var encodedSection = encodeURIComponent(newSection);
+                        window.location.href = '/edit-section/' + encodedSection;
+                    }, 1500);
+                } else {
+                    return response.text().then(function(text) {
+                        throw new Error(text || 'Ошибка сервера: ' + response.status);
+                    });
+                }
+            })
+            .catch(function(error) {
+                console.error('Ошибка:', error);
+                showToast(error.message, 'error');
             });
         }
-    })
-    .catch(error => {
-        console.error('Ошибка:', error);
-        let errorMessage = error.message;
-        if (errorMessage.length > 100) {
-            errorMessage = errorMessage.substring(0, 100) + '...';
-        }
-        showToast('❌ ' + errorMessage, 'error');
-    });
-}
-// Функция перемещения заметки
-function moveNote(select, notePath) {
-    const newSection = select.value;
-    if (!newSection) {
-        select.selectedIndex = 0;
-        return;
-    }
-    
-    if (newSection === '__new__') {
-        document.getElementById('noteToMove').value = notePath;
-        document.getElementById('newSectionModal').style.display = 'flex';
-        select.selectedIndex = 0;
-        return;
-    }
-    
-    if (confirm(`Переместить заметку в раздел "${newSection}"?`)) {
-        const params = new URLSearchParams();
-        params.append('note_path', notePath);
-        params.append('new_section', newSection);
         
-        showToast('Перемещение...', 'info');
-        
-        fetch('/move-note', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-            },
-            body: params.toString()
-        })
-极    .then(response => {
-        if (response.ok) {
-            // Если ответ успешный, просто показываем общее сообщение
-            showToast('✅ Заметка успешно перемещена', 'success');
-            setTimeout(() => window.location.reload(), 1000);
-        } else {
-            // Для ошибок пытаемся получить текст, но не показываем HTML
-            throw new Error(`Ошибка сервера: ${response.status}`);
-        }
-    })
-    .catch(error => {
-        console.error('Ошибка:', error);
-        showToast('❌ Не удалось переместить заметку', 'error');
-        select.selectedIndex = 0;
-    });
-} else {
-    select.selectedIndex = 0;
-}
-}
-// Обработчик формы создания нового раздела
-document.getElementById('newSectionForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const newSection = document.getElementById极('newSectionNameInput').value.trim();
-    const notePath = document.getElementById('noteToMove').value;
-    
-    if (!newSection) {
-        showToast('❌ Введите название раздела', 'error');
-        return;
-    }
-    
-    showToast('Создание раздела...', 'info');
-    
-    const params = new URLSearchParams();
-    params.append('note_path', notePath);
-    params.append('new_section', newSection);
-    
-    fetch('/move极-note', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-        },
-        body: params.toString()
-    })
-    .then(response => {
-        if (response.ok) {
-            showToast('✅ Раздел создан и заметка перемещена', 'success');
-            setTimeout(() => window.location.reload(), 1000);
-        } else {
-            throw new Error(`Ошибка сервера: ${response.status}`);
-        }
-    })
-    .catch(error => {
-        console.error('Ошибка:', error);
-        showToast('❌ Не удалось создать раздел', 'error');
-    });
-});
-// Вспомогательная функция для извлечения текста из HTML
-function extractTextFromHtml(html) {
-    if (!html) return '';
-    
-    // Если это не HTML, возвращаем как есть
-    if (!html.includes('<') && !html.includes('>')) {
-        return html.trim();
-    }
-    
-    try {
-        // Создаем временный элемент для извлечения текста
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = html;
-        return tempDiv.textContent || tempDiv.innerText || '';
-    } catch (e) {
-        console.warn('Не удалось распарсить HTML:', e);
-        return html.replace(/<[^>]*>/g, '').trim();
-    }
-}
-// Обработчик формы создания нового раздела
-document.getElementById('newSectionForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const newSection = document.getElementById('newSectionNameInput').value.trim();
-    const notePath = document.getElementById('noteToMove').value;
-    
-    if (!newSection) {
-        showToast('❌ Введите название раздела', 'error');
-        return;
-    }
-    
-    showToast('Создание раздела...', 'info');
-    
-    const params = new URLSearchParams();
-    params.append('note_path', notePath);
-    params.append('new_section', newSection);
-    
-    fetch('/move-note', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-        },
-        body: params.toString()
-    })
-    .then(response => {
-        const contentType = response.headers.get('content-type') || '';
-        
-        if (response.ok) {
-            if (contentType.includes('application/json')) {
-                return response.json().then(data => {
-                    showToast('✅ ' + data.message, 'success');
-                    setTimeout(() => window.location.reload(), 1000);
+        // Функция перемещения заметки
+        function moveNote(select, notePath) {
+            var newSection = select.value;
+            if (!newSection) {
+                select.selectedIndex = 0;
+                return;
+            }
+            
+            if (newSection === '__new__') {
+                document.getElementById('noteToMove').value = notePath;
+                document.getElementById('newSectionModal').style.display = 'flex';
+                select.selectedIndex = 0;
+                return;
+            }
+            
+            if (confirm('Переместить заметку в раздел "' + newSection + '"?')) {
+                var params = new URLSearchParams();
+                params.append('note_path', notePath);
+                params.append('new_section', newSection);
+                
+                showToast('Перемещение...', 'info');
+                
+                fetch('/move-note', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                    },
+                    body: params.toString()
+                })
+                .then(function(response) {
+                    if (response.ok) {
+                        showToast('Заметка успешно перемещена', 'success');
+                        setTimeout(function() { window.location.reload(); }, 1000);
+                    } else {
+                        throw new Error('Ошибка сервера: ' + response.status);
+                    }
+                })
+                .catch(function(error) {
+                    console.error('Ошибка:', error);
+                    showToast('Не удалось переместить заметку', 'error');
+                    select.selectedIndex = 0;
                 });
             } else {
-                return response.text().then(text => {
-                    const cleanText = extractTextFromHtml(text);
-                    showToast('✅ ' + cleanText, 'success');
-                    setTimeout(() => window.location.reload(), 1000);
-                });
+                select.selectedIndex = 0;
             }
-        } else {
-            return response.text().then(text => {
-                let errorMessage = extractTextFromHtml(text);
-                if (!errorMessage) {
-                    errorMessage = `Ошибка сервера: ${response.status} ${response.statusText}`;
-                }
-                throw new Error(errorMessage);
-            });
         }
-    })
-    .catch(error => {
-        console.error('Ошибка:', error);
-        let errorMessage = error.message;
-        errorMessage = extractTextFromHtml(errorMessage);
-        showToast('❌ ' + errorMessage, 'error');
-    });
-});
-// Функции для модального окна
-function cancelMove() {
-    document.getElementById('newSectionModal').style.display = 'none';
-    document.getElementById('newSectionNameInput').value = '';
-    
-    document.querySelectorAll('select').forEach(select => {
-        select.selectedIndex = 0;
-    });
-}
-window.addEventListener('click', function(event) {
-    const modal = document.getElementById('newSectionModal');
-    if (event.target === modal) {
-        cancelMove();
-    }
-});
-document.addEventListener('keydown', function(event) {
-    if (event.key === 'Escape') {
-        cancelMove();
-    }
-});
+        
+        // Обработчик формы создания нового раздела
+        document.getElementById('newSectionForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            var newSection = document.getElementById('newSectionNameInput').value.trim();
+            var notePath = document.getElementById('noteToMove').value;
+            
+            if (!newSection) {
+                showToast('Введите название раздела', 'error');
+                return;
+            }
+            
+            showToast('Создание раздела...', 'info');
+            
+            var params = new URLSearchParams();
+            params.append('note_path', notePath);
+            params.append('new_section', newSection);
+            
+            fetch('/move-note', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                },
+                body: params.toString()
+            })
+            .then(function(response) {
+                if (response.ok) {
+                    showToast('Раздел создан и заметка перемещена', 'success');
+                    setTimeout(function() { window.location.reload(); }, 1000);
+                } else {
+                    throw new Error('Ошибка сервера: ' + response.status);
+                }
+            })
+            .catch(function(error) {
+                console.error('Ошибка:', error);
+                showToast('Не удалось создать раздел', 'error');
+            });
+        });
+        
+        // Функции для модального окна
+        function cancelMove() {
+            document.getElementById('newSectionModal').style.display = 'none';
+            document.getElementById('newSectionNameInput').value = '';
+            document.getElementById('noteToMove').value = '';
+            
+            var selects = document.querySelectorAll('select');
+            for (var i = 0; i < selects.length; i++) {
+                selects[i].selectedIndex = 0;
+            }
+        }
+        
+        // Закрытие модального окна при клике вне его
+        window.addEventListener('click', function(event) {
+            var modal = document.getElementById('newSectionModal');
+            if (event.target === modal) {
+                cancelMove();
+            }
+        });
+        
+        // Закрытие по Escape
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                cancelMove();
+            }
+        });
+        
+        // Flash сообщения
+        var flashMessage = document.querySelector('.flash');
+        if (flashMessage) {
+            setTimeout(function() {
+                flashMessage.style.opacity = '0';
+                setTimeout(function() { 
+                    if (flashMessage.parentNode) flashMessage.remove(); 
+                }, 500);
+            }, 3000);
+        }
     </script>
 </body>
 </html>

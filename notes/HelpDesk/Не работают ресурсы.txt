@@ -1,0 +1,5 @@
+Нажми Win+R
+введи команды по очереди:
+klist purge
+taskkill /f /im explorer.exe
+runas /user:o3\логин explorer.exe 

@@ -31,10 +31,11 @@ type Section struct {
 }
 
 type PageData struct {
-	Title    string
-	Sections []Section
-	Query    string
-	Flash    string
+	Title         string
+	Sections      []Section
+	Query         string
+	SectionFilter string
+	Flash         string
 }
 
 type SectionEditData struct {
@@ -135,7 +136,9 @@ func updateSectionsOrder(oldName, newName string) {
 			newOrder = append(newOrder, newName)
 		}
 	}
-	saveSectionsOrder(newOrder)
+	if len(newOrder) > 0 {
+		saveSectionsOrder(newOrder)
+	}
 }
 
 type loggingResponseWriter struct {
@@ -267,11 +270,15 @@ func loadNotes() map[string][]Note {
 			return nil
 		}
 		title := strings.TrimSuffix(filepath.Base(path), ".txt")
+
+		// Нормализуем путь: заменяем обратные слеши на прямые
+		normalizedPath := strings.ReplaceAll(strings.TrimSuffix(relPath, ".txt"), "\\", "/")
+
 		note := Note{
 			Title:   title,
 			Content: string(content),
 			Section: section,
-			Path:    strings.TrimSuffix(relPath, ".txt"),
+			Path:    normalizedPath,
 		}
 		notes[section] = append(notes[section], note)
 		return nil
@@ -345,17 +352,39 @@ func isValidFilename(name string) bool {
 func mapToSections(notesMap map[string][]Note) []Section {
 	order := loadSectionsOrder()
 	sections := make([]Section, 0, len(order)+len(notesMap))
+
+	// Создаем копию карты, чтобы не изменять оригинал
+	notesCopy := make(map[string][]Note)
+	for k, v := range notesMap {
+		notesCopy[k] = v
+	}
+
 	// Добавляем разделы по порядку
 	for _, name := range order {
-		if notes, ok := notesMap[name]; ok {
+		if notes, ok := notesCopy[name]; ok {
 			sections = append(sections, Section{Name: name, Notes: notes})
-			delete(notesMap, name)
+			delete(notesCopy, name)
 		}
 	}
+
 	// Добавляем оставшиеся разделы
-	for name, notes := range notesMap {
-		sections = append(sections, Section{Name: name, Notes: notes})
+	remainingNames := make([]string, 0, len(notesCopy))
+	for name := range notesCopy {
+		remainingNames = append(remainingNames, name)
 	}
+	// Сортируем для стабильного порядка
+	for i := 0; i < len(remainingNames)-1; i++ {
+		for j := i + 1; j < len(remainingNames); j++ {
+			if remainingNames[i] > remainingNames[j] {
+				remainingNames[i], remainingNames[j] = remainingNames[j], remainingNames[i]
+			}
+		}
+	}
+	for _, name := range remainingNames {
+		sections = append(sections, Section{Name: name, Notes: notesCopy[name]})
+	}
+
+	log.Printf("mapToSections: итого %d разделов", len(sections))
 	return sections
 }
 
@@ -412,14 +441,19 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		Section string
 		Content string
 		Path    string
+		Flash   string
 	}{
 		Title:   noteTitle,
 		Section: section,
 		Content: string(content),
 		Path:    decodedPath,
+		Flash:   getFlash(w, r),
 	}
 	tmpl := template.Must(template.ParseFiles("templates/view.html"))
-	tmpl.Execute(w, data)
+	if err := tmpl.Execute(w, data); err != nil {
+		log.Printf("Ошибка рендеринга view.html: %v", err)
+		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
+	}
 }
 
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
@@ -677,22 +711,42 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
+	sectionFilter := r.URL.Query().Get("section")
+
+	log.Printf("Поиск по запросу: %s, раздел: %s", query, sectionFilter)
+
 	notesMap := loadNotesCached()
 	resultsMap := make(map[string][]Note)
+
 	for section, sectionNotes := range notesMap {
+		// Если указан фильтр по разделу и он не совпадает, пропускаем
+		if sectionFilter != "" && section != sectionFilter {
+			continue
+		}
+
 		for _, note := range sectionNotes {
 			if strings.Contains(strings.ToLower(note.Title+note.Content), strings.ToLower(query)) {
 				resultsMap[section] = append(resultsMap[section], note)
 			}
 		}
 	}
-	sections := mapToSections(resultsMap)
-	data := PageData{
-		Title:    "Результаты поиска: " + query,
-		Sections: sections,
-		Query:    query,
-		Flash:    getFlash(w, r),
+
+	// Создаем копию карты, чтобы не изменять оригинал
+	resultsMapCopy := make(map[string][]Note)
+	for k, v := range resultsMap {
+		resultsMapCopy[k] = v
 	}
+
+	sections := mapToSections(resultsMapCopy)
+
+	data := PageData{
+		Title:         "Результаты поиска: " + query,
+		Sections:      sections,
+		Query:         query,
+		SectionFilter: sectionFilter,
+		Flash:         getFlash(w, r),
+	}
+
 	tmpl := template.Must(template.ParseFiles("templates/index.html"))
 	if err := tmpl.Execute(w, data); err != nil {
 		log.Printf("Ошибка рендеринга search: %v", err)
