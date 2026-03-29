@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -9,7 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -19,12 +22,17 @@ type Note struct {
 	Title   string
 	Content string
 	Section string
-	Path    string
+	Path    string // относительный путь без расширения (раздел/название)
+}
+
+type Section struct {
+	Name  string
+	Notes []Note
 }
 
 type PageData struct {
 	Title    string
-	Sections map[string][]Note
+	Sections []Section
 	Query    string
 	Flash    string
 }
@@ -42,7 +50,94 @@ var (
 	cacheMutex sync.RWMutex
 )
 
-// loggingResponseWriter перехватывает статус ответа для логирования
+const orderFile = "sections_order.json"
+
+// openBrowser открывает URL в браузере по умолчанию
+func openBrowser(url string) error {
+	var err error
+	switch runtime.GOOS {
+	case "linux":
+		err = exec.Command("xdg-open", url).Start()
+	case "windows":
+		err = exec.Command("cmd", "/c", "start", url).Start()
+	case "darwin":
+		err = exec.Command("open", url).Start()
+	default:
+		err = fmt.Errorf("неподдерживаемая операционная система")
+	}
+	return err
+}
+
+// waitForServer ожидает, пока сервер станет доступен
+func waitForServer(url string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		client := http.Client{
+			Timeout: 2 * time.Second,
+		}
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("сервер не ответил в течение %v", timeout)
+}
+
+// loadSectionsOrder загружает сохранённый порядок разделов
+func loadSectionsOrder() []string {
+	data, err := os.ReadFile(orderFile)
+	if err != nil {
+		return []string{}
+	}
+	var order []string
+	if err := json.Unmarshal(data, &order); err != nil {
+		log.Printf("Ошибка разбора порядка разделов: %v", err)
+		return []string{}
+	}
+	return order
+}
+
+// saveSectionsOrder сохраняет порядок разделов
+func saveSectionsOrder(order []string) error {
+	data, err := json.Marshal(order)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(orderFile, data, 0644)
+}
+
+// updateSectionsOrder обновляет порядок после переименования/удаления
+func updateSectionsOrder(oldName, newName string) {
+	order := loadSectionsOrder()
+	newOrder := make([]string, 0, len(order))
+	for _, name := range order {
+		if name == oldName {
+			if newName != "" {
+				newOrder = append(newOrder, newName)
+			}
+		} else {
+			newOrder = append(newOrder, name)
+		}
+	}
+	if newName != "" && oldName == "" {
+		found := false
+		for _, n := range newOrder {
+			if n == newName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			newOrder = append(newOrder, newName)
+		}
+	}
+	saveSectionsOrder(newOrder)
+}
+
 type loggingResponseWriter struct {
 	http.ResponseWriter
 	status int
@@ -53,14 +148,12 @@ func (lrw *loggingResponseWriter) WriteHeader(code int) {
 	lrw.ResponseWriter.WriteHeader(code)
 }
 
-// loggingMiddleware логирует каждый HTTP-запрос
 func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		lw := &loggingResponseWriter{ResponseWriter: w, status: http.StatusOK}
 		next(lw, r)
-		duration := time.Since(start)
-		log.Printf("[%s] %s %s - %d (%v)", r.Method, r.URL.Path, r.RemoteAddr, lw.status, duration)
+		log.Printf("[%s] %s %s - %d (%v)", r.Method, r.URL.Path, r.RemoteAddr, lw.status, time.Since(start))
 	}
 }
 
@@ -83,6 +176,7 @@ func main() {
 	http.HandleFunc("/edit-section/", loggingMiddleware(editSectionHandler))
 	http.HandleFunc("/rename-section", loggingMiddleware(renameSectionHandler))
 	http.HandleFunc("/move-note", loggingMiddleware(moveNoteHandler))
+	http.HandleFunc("/reorder-sections", loggingMiddleware(reorderSectionsHandler))
 
 	http.HandleFunc("/import-export", loggingMiddleware(importExportHandler))
 	http.HandleFunc("/api/categories", loggingMiddleware(categoriesHandler))
@@ -93,8 +187,61 @@ func main() {
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
 
-	log.Println("Сервер запущен на http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	serverURL := "http://localhost:8080"
+	log.Printf("Сервер запускается на %s", serverURL)
+
+	// Запускаем сервер в отдельной горутине
+	server := &http.Server{
+		Addr:         ":8080",
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+	}
+
+	// Запускаем сервер
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Ошибка запуска сервера: %v", err)
+		}
+	}()
+
+	// Ждем, пока сервер станет доступен
+	log.Println("Ожидание запуска сервера...")
+	if err := waitForServer(serverURL, 5*time.Second); err != nil {
+		log.Printf("Предупреждение: %v", err)
+	} else {
+		log.Println("Сервер успешно запущен")
+	}
+
+	// Открываем браузер
+	log.Printf("Открытие браузера: %s", serverURL)
+	if err := openBrowser(serverURL); err != nil {
+		log.Printf("Не удалось открыть браузер автоматически: %v", err)
+		log.Printf("Пожалуйста, откройте вручную: %s", serverURL)
+	} else {
+		log.Println("Браузер открыт автоматически")
+	}
+
+	// Ожидаем завершения (блокируем главную горутину)
+	select {}
+}
+
+// reorderSectionsHandler сохраняет новый порядок разделов
+func reorderSectionsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
+		return
+	}
+	var order []string
+	if err := json.NewDecoder(r.Body).Decode(&order); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := saveSectionsOrder(order); err != nil {
+		log.Printf("Ошибка сохранения порядка разделов: %v", err)
+		http.Error(w, "Ошибка сохранения порядка", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func loadNotes() map[string][]Note {
@@ -131,6 +278,10 @@ func loadNotes() map[string][]Note {
 	})
 	if err != nil {
 		log.Printf("Ошибка загрузки заметок: %v", err)
+	}
+	log.Printf("loadNotes: найдено %d разделов", len(notes))
+	for section, list := range notes {
+		log.Printf("  раздел '%s' содержит %d заметок", section, len(list))
 	}
 	return notes
 }
@@ -190,134 +341,116 @@ func isValidFilename(name string) bool {
 	return !strings.ContainsAny(name, forbiddenChars)
 }
 
+// mapToSections преобразует map в упорядоченный срез Section
+func mapToSections(notesMap map[string][]Note) []Section {
+	order := loadSectionsOrder()
+	sections := make([]Section, 0, len(order)+len(notesMap))
+	// Добавляем разделы по порядку
+	for _, name := range order {
+		if notes, ok := notesMap[name]; ok {
+			sections = append(sections, Section{Name: name, Notes: notes})
+			delete(notesMap, name)
+		}
+	}
+	// Добавляем оставшиеся разделы
+	for name, notes := range notesMap {
+		sections = append(sections, Section{Name: name, Notes: notes})
+	}
+	return sections
+}
+
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	notes := loadNotesCached()
+	notesMap := loadNotesCached()
+	sections := mapToSections(notesMap)
 	data := PageData{
 		Title:    "NoteZone",
-		Sections: notes,
+		Sections: sections,
 		Flash:    getFlash(w, r),
 	}
 	tmpl := template.Must(template.ParseFiles("templates/index.html"))
-	err := tmpl.Execute(w, data)
-	if err != nil {
-		log.Printf("Ошибка рендеринга шаблона index.html: %v", err)
+	if err := tmpl.Execute(w, data); err != nil {
+		log.Printf("Ошибка рендеринга index.html: %v", err)
 		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
 	}
 }
 
 func viewHandler(w http.ResponseWriter, r *http.Request) {
-	// Получаем полный путь после /view/
 	rawPath := strings.TrimPrefix(r.URL.Path, "/view/")
 	if rawPath == "" {
 		http.NotFound(w, r)
 		return
 	}
-
-	// Декодируем URL (преобразуем %D0%9F обратно в кириллицу)
 	decodedPath, err := url.QueryUnescape(rawPath)
 	if err != nil {
-		log.Printf("Ошибка декодирования URL: %v", err)
 		decodedPath = rawPath
 	}
-
-	// Разделяем на раздел и название заметки
 	parts := strings.SplitN(decodedPath, "/", 2)
 	if len(parts) != 2 {
 		http.Error(w, "Некорректный формат пути. Ожидается: /view/раздел/название", http.StatusBadRequest)
 		return
 	}
-
 	section := parts[0]
 	noteTitle := parts[1]
 
-	// Формируем путь к файлу
 	fullPath := filepath.Join("notes", section, noteTitle+".txt")
-
-	// Проверка безопасности пути
 	if !strings.HasPrefix(filepath.Clean(fullPath), filepath.Clean("notes")+string(os.PathSeparator)) {
 		http.Error(w, "Недопустимый путь", http.StatusBadRequest)
 		return
 	}
-
-	// Проверяем существование файла
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 		http.NotFound(w, r)
 		return
 	}
-
-	// Читаем содержимое
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
-		log.Printf("Ошибка чтения файла %s: %v", fullPath, err)
 		http.Error(w, "Ошибка чтения файла", http.StatusInternalServerError)
 		return
 	}
 
-	note := Note{
-		Title:   noteTitle,
-		Content: string(content),
-		Section: section,
-		Path:    filepath.Join(section, noteTitle),
-	}
-
 	data := struct {
-		Note
-		Flash string
+		Title   string
+		Section string
+		Content string
+		Path    string
 	}{
-		Note:  note,
-		Flash: getFlash(w, r),
+		Title:   noteTitle,
+		Section: section,
+		Content: string(content),
+		Path:    decodedPath,
 	}
-
 	tmpl := template.Must(template.ParseFiles("templates/view.html"))
-	err = tmpl.Execute(w, data)
-	if err != nil {
-		log.Printf("Ошибка рендеринга шаблона view.html: %v", err)
-		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
-	}
+	tmpl.Execute(w, data)
 }
 
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		log.Printf("Неподдерживаемый метод %s для /delete/", r.Method)
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
-
 	notePath := strings.TrimPrefix(r.URL.Path, "/delete/")
 	if notePath == "" {
 		http.NotFound(w, r)
 		return
 	}
-
-	// Декодируем URL
 	decodedPath, err := url.QueryUnescape(notePath)
 	if err != nil {
-		log.Printf("Ошибка декодирования URL: %v", err)
 		decodedPath = notePath
 	}
-
 	fullPath := filepath.Join("notes", decodedPath+".txt")
 	if !strings.HasPrefix(filepath.Clean(fullPath), filepath.Clean("notes")+string(os.PathSeparator)) {
 		http.Error(w, "Недопустимый путь", http.StatusBadRequest)
 		return
 	}
-
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 		http.NotFound(w, r)
 		return
 	}
-
-	log.Printf("Удаление заметки: %s", fullPath)
-	err = os.Remove(fullPath)
-	if err != nil {
-		log.Printf("Ошибка удаления файла %s: %v", fullPath, err)
+	if err := os.Remove(fullPath); err != nil {
 		http.Error(w, "Ошибка удаления файла", http.StatusInternalServerError)
 		return
 	}
-
 	updateNotesCache()
 	setFlash(w, "Заметка успешно удалена")
-	log.Printf("Заметка успешно удалена: %s", fullPath)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -333,8 +466,7 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	funcMap := template.FuncMap{
 		"js": func(s interface{}) string {
-			str := template.JSEscapeString(fmt.Sprintf("%v", s))
-			return str
+			return template.JSEscapeString(fmt.Sprintf("%v", s))
 		},
 	}
 	data := map[string]interface{}{
@@ -343,9 +475,8 @@ func createHandler(w http.ResponseWriter, r *http.Request) {
 		"Flash":    getFlash(w, r),
 	}
 	tmpl := template.Must(template.New("create.html").Funcs(funcMap).ParseFiles("templates/create.html"))
-	err := tmpl.Execute(w, data)
-	if err != nil {
-		log.Printf("Ошибка рендеринга шаблона create.html: %v", err)
+	if err := tmpl.Execute(w, data); err != nil {
+		log.Printf("Ошибка рендеринга create.html: %v", err)
 		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
 	}
 }
@@ -355,14 +486,10 @@ func saveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
-
-	err := r.ParseForm()
-	if err != nil {
-		log.Printf("Ошибка парсинга формы при сохранении: %v", err)
+	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ошибка обработки формы", http.StatusBadRequest)
 		return
 	}
-
 	section := r.FormValue("section")
 	newSection := r.FormValue("new_section")
 	title := r.FormValue("title")
@@ -372,55 +499,50 @@ func saveHandler(w http.ResponseWriter, r *http.Request) {
 	if section == "" && newSection != "" {
 		finalSection = newSection
 	}
-
 	if finalSection == "" || title == "" || content == "" {
 		http.Error(w, "Все поля обязательны для заполнения", http.StatusBadRequest)
 		return
 	}
-
 	finalSection = strings.Trim(finalSection, "/\\")
 	if finalSection == "." {
 		finalSection = "Общие"
 	}
-
 	if !isValidFilename(title) || !isValidFilename(finalSection) {
 		http.Error(w, "Недопустимые символы в названии", http.StatusBadRequest)
 		return
 	}
-
 	sectionPath := filepath.Join("notes", finalSection)
-	err = os.MkdirAll(sectionPath, 0755)
-	if err != nil {
-		log.Printf("Ошибка создания раздела %s: %v", sectionPath, err)
+	if err := os.MkdirAll(sectionPath, 0755); err != nil {
 		http.Error(w, "Ошибка создания раздела: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 	filePath := filepath.Join(sectionPath, title+".txt")
 	if _, err := os.Stat(filePath); err == nil {
 		http.Error(w, "Заметка с таким названием уже существует", http.StatusBadRequest)
 		return
 	}
-
-	log.Printf("Создание заметки: раздел=%s, название=%s", finalSection, title)
-	err = os.WriteFile(filePath, []byte(content), 0644)
-	if err != nil {
-		log.Printf("Ошибка сохранения файла %s: %v", filePath, err)
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
 		http.Error(w, "Ошибка сохранения файла: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 	updateNotesCache()
+
+	// Добавляем новый раздел в порядок, если его там нет
+	order := loadSectionsOrder()
+	found := false
+	for _, s := range order {
+		if s == finalSection {
+			found = true
+			break
+		}
+	}
+	if !found {
+		order = append(order, finalSection)
+		saveSectionsOrder(order)
+	}
+
 	setFlash(w, "Заметка успешно создана")
-	log.Printf("Заметка успешно создана: %s", filePath)
-
-	// Кодируем раздел и название для URL
-	encodedSection := url.QueryEscape(finalSection)
-	encodedTitle := url.QueryEscape(title)
-
-	// Формируем правильный URL
-	redirectURL := "/view/" + encodedSection + "/" + encodedTitle
-
+	redirectURL := "/view/" + url.QueryEscape(finalSection) + "/" + url.QueryEscape(title)
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
@@ -429,56 +551,42 @@ func editHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
-
 	notePath := strings.TrimPrefix(r.URL.Path, "/edit/")
 	if notePath == "" {
 		http.NotFound(w, r)
 		return
 	}
-
-	// Декодируем URL
 	decodedPath, err := url.QueryUnescape(notePath)
 	if err != nil {
-		log.Printf("Ошибка декодирования URL: %v", err)
 		decodedPath = notePath
 	}
-
-	// Разделяем на раздел и название
 	parts := strings.SplitN(decodedPath, "/", 2)
 	if len(parts) != 2 {
 		http.Error(w, "Некорректный формат пути. Ожидается: /edit/раздел/название", http.StatusBadRequest)
 		return
 	}
-
 	section := parts[0]
 	title := parts[1]
 
 	fullPath := filepath.Join("notes", section, title+".txt")
-
-	// Проверка безопасности
 	if !strings.HasPrefix(filepath.Clean(fullPath), filepath.Clean("notes")+string(os.PathSeparator)) {
 		http.Error(w, "Недопустимый путь", http.StatusBadRequest)
 		return
 	}
-
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 		http.NotFound(w, r)
 		return
 	}
-
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
-		log.Printf("Ошибка чтения файла %s: %v", fullPath, err)
 		http.Error(w, "Ошибка чтения файла", http.StatusInternalServerError)
 		return
 	}
-
 	notes := loadNotesCached()
 	sections := make([]string, 0, len(notes))
 	for s := range notes {
 		sections = append(sections, s)
 	}
-
 	funcMap := template.FuncMap{
 		"contains": func(slice []string, item string) bool {
 			for _, s := range slice {
@@ -489,25 +597,21 @@ func editHandler(w http.ResponseWriter, r *http.Request) {
 			return false
 		},
 		"js": func(s interface{}) string {
-			str := template.JSEscapeString(fmt.Sprintf("%v", s))
-			return str
+			return template.JSEscapeString(fmt.Sprintf("%v", s))
 		},
 	}
-
 	data := map[string]interface{}{
 		"Title":     "Редактировать заметку",
 		"Sections":  sections,
 		"Section":   section,
 		"NoteTitle": title,
 		"Content":   string(content),
-		"NotePath":  decodedPath, // Сохраняем декодированный путь
+		"NotePath":  decodedPath,
 		"Flash":     getFlash(w, r),
 	}
-
 	tmpl := template.Must(template.New("edit.html").Funcs(funcMap).ParseFiles("templates/edit.html"))
-	err = tmpl.Execute(w, data)
-	if err != nil {
-		log.Printf("Ошибка рендеринга шаблона edit.html: %v", err)
+	if err := tmpl.Execute(w, data); err != nil {
+		log.Printf("Ошибка рендеринга edit.html: %v", err)
 		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
 	}
 }
@@ -517,14 +621,10 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
-
-	err := r.ParseForm()
-	if err != nil {
-		log.Printf("Ошибка парсинга формы при обновлении: %v", err)
+	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ошибка обработки формы", http.StatusBadRequest)
 		return
 	}
-
 	oldPath := r.FormValue("old_path")
 	section := r.FormValue("section")
 	newSection := r.FormValue("new_section")
@@ -535,111 +635,67 @@ func updateHandler(w http.ResponseWriter, r *http.Request) {
 	if finalSection == "" {
 		finalSection = strings.TrimSpace(newSection)
 	}
-
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
-	finalSection = strings.TrimSpace(finalSection)
-
-	if finalSection == "" {
-		log.Printf("Ошибка валидации: finalSection пусто")
-		http.Error(w, "Раздел не может быть пустым", http.StatusBadRequest)
+	if finalSection == "" || title == "" || content == "" {
+		http.Error(w, "Все поля обязательны для заполнения", http.StatusBadRequest)
 		return
 	}
-
-	if title == "" {
-		log.Printf("Ошибка валидации: title пусто")
-		http.Error(w, "Название не может быть пустым", http.StatusBadRequest)
-		return
-	}
-
-	if content == "" {
-		log.Printf("Ошибка валидации: content пусто")
-		http.Error(w, "Содержимое не может быть пустым", http.StatusBadRequest)
-		return
-	}
-
 	finalSection = strings.Trim(finalSection, "/\\")
 	if finalSection == "." {
 		finalSection = "Общие"
 	}
-
-	if !isValidFilename(title) {
-		log.Printf("Ошибка валидации: недопустимое название '%s'", title)
-		http.Error(w, "Недопустимые символы в названии заметки", http.StatusBadRequest)
+	if !isValidFilename(title) || !isValidFilename(finalSection) {
+		http.Error(w, "Недопустимые символы в названии", http.StatusBadRequest)
 		return
 	}
-
-	if !isValidFilename(finalSection) {
-		log.Printf("Ошибка валидации: недопустимое название раздела '%s'", finalSection)
-		http.Error(w, "Недопустимые символы в названии раздела", http.StatusBadRequest)
-		return
-	}
-
 	sectionPath := filepath.Join("notes", finalSection)
-	err = os.MkdirAll(sectionPath, 0755)
-	if err != nil {
-		log.Printf("Ошибка создания папки %s: %v", sectionPath, err)
+	if err := os.MkdirAll(sectionPath, 0755); err != nil {
 		http.Error(w, "Ошибка создания раздела", http.StatusInternalServerError)
 		return
 	}
-
 	newFullPath := filepath.Join(sectionPath, title+".txt")
 	oldFullPath := filepath.Join("notes", oldPath+".txt")
-
 	if oldFullPath != newFullPath {
 		if _, err := os.Stat(newFullPath); err == nil {
-			log.Printf("Ошибка: файл уже существует %s", newFullPath)
 			http.Error(w, "Заметка с таким названием уже существует", http.StatusBadRequest)
 			return
 		}
-	}
-
-	log.Printf("Обновление заметки: старая_путь=%s, новый_раздел=%s, новое_название=%s", oldPath, finalSection, title)
-
-	if oldFullPath != newFullPath {
-		err := os.Remove(oldFullPath)
-		if err != nil && !os.IsNotExist(err) {
-			log.Printf("Ошибка удаления старого файла %s: %v", oldFullPath, err)
+		if err := os.Remove(oldFullPath); err != nil && !os.IsNotExist(err) {
 			http.Error(w, "Ошибка при удалении старого файла", http.StatusInternalServerError)
 			return
 		}
 	}
-
-	err = os.WriteFile(newFullPath, []byte(content), 0644)
-	if err != nil {
-		log.Printf("Ошибка сохранения файла %s: %v", newFullPath, err)
+	if err := os.WriteFile(newFullPath, []byte(content), 0644); err != nil {
 		http.Error(w, "Ошибка сохранения файла", http.StatusInternalServerError)
 		return
 	}
-
 	updateNotesCache()
-	log.Printf("Заметка успешно обновлена: %s", newFullPath)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Заметка успешно обновлена"))
 }
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
-	log.Printf("Поиск по запросу: %s", query)
-	notes := loadNotesCached()
-	results := make(map[string][]Note)
-	for section, sectionNotes := range notes {
+	notesMap := loadNotesCached()
+	resultsMap := make(map[string][]Note)
+	for section, sectionNotes := range notesMap {
 		for _, note := range sectionNotes {
 			if strings.Contains(strings.ToLower(note.Title+note.Content), strings.ToLower(query)) {
-				results[section] = append(results[section], note)
+				resultsMap[section] = append(resultsMap[section], note)
 			}
 		}
 	}
+	sections := mapToSections(resultsMap)
 	data := PageData{
 		Title:    "Результаты поиска: " + query,
-		Sections: results,
+		Sections: sections,
 		Query:    query,
 		Flash:    getFlash(w, r),
 	}
 	tmpl := template.Must(template.ParseFiles("templates/index.html"))
-	err := tmpl.Execute(w, data)
-	if err != nil {
-		log.Printf("Ошибка рендеринга шаблона search: %v", err)
+	if err := tmpl.Execute(w, data); err != nil {
+		log.Printf("Ошибка рендеринга search: %v", err)
 		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
 	}
 }
@@ -649,47 +705,44 @@ func deleteSectionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
-
 	sectionName := strings.TrimPrefix(r.URL.Path, "/delete-section/")
 	if sectionName == "" {
 		http.Error(w, "Имя раздела обязательно", http.StatusBadRequest)
 		return
 	}
-
 	var err error
 	sectionName, err = url.QueryUnescape(sectionName)
 	if err != nil {
 		http.Error(w, "Некорректное имя раздела", http.StatusBadRequest)
 		return
 	}
-
-	if sectionName == "" || sectionName == "." || sectionName == ".." ||
-		strings.Contains(sectionName, "..") {
+	if sectionName == "" || sectionName == "." || sectionName == ".." || strings.Contains(sectionName, "..") {
 		http.Error(w, "Недопустимое имя раздела", http.StatusBadRequest)
 		return
 	}
-
 	if sectionName == "Общие" {
 		http.Error(w, "Нельзя удалить раздел 'Общие'", http.StatusForbidden)
 		return
 	}
-
 	sectionPath := filepath.Join("notes", sectionName)
 	if _, err := os.Stat(sectionPath); os.IsNotExist(err) {
 		http.Error(w, "Раздел не найден", http.StatusNotFound)
 		return
 	}
-
-	log.Printf("Удаление раздела: %s", sectionPath)
-	err = os.RemoveAll(sectionPath)
-	if err != nil {
-		log.Printf("Ошибка удаления папки раздела %s: %v", sectionName, err)
+	if err := os.RemoveAll(sectionPath); err != nil {
 		http.Error(w, "Ошибка удаления раздела", http.StatusInternalServerError)
 		return
 	}
-
+	// Удаляем из порядка
+	order := loadSectionsOrder()
+	newOrder := make([]string, 0, len(order))
+	for _, name := range order {
+		if name != sectionName {
+			newOrder = append(newOrder, name)
+		}
+	}
+	saveSectionsOrder(newOrder)
 	updateNotesCache()
-	log.Printf("Раздел успешно удален: %s", sectionPath)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Раздел успешно удален"))
 }
@@ -699,118 +752,77 @@ func editSectionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
-
 	sectionName := strings.TrimPrefix(r.URL.Path, "/edit-section/")
 	if sectionName == "" {
 		http.NotFound(w, r)
 		return
 	}
-
 	var err error
 	sectionName, err = url.QueryUnescape(sectionName)
 	if err != nil {
 		http.Error(w, "Некорректное имя раздела", http.StatusBadRequest)
 		return
 	}
-
 	notes := loadNotesCached()
-
 	if _, exists := notes[sectionName]; !exists && sectionName != "Общие" {
 		http.NotFound(w, r)
 		return
 	}
-
-	currentNotes := notes[sectionName]
-
 	data := SectionEditData{
 		Title:       "Редактирование раздела: " + sectionName,
 		Section:     sectionName,
-		Notes:       currentNotes,
+		Notes:       notes[sectionName],
 		AllSections: notes,
 		Flash:       getFlash(w, r),
 	}
-
 	tmpl := template.Must(template.ParseFiles("templates/edit-section.html"))
-	err = tmpl.Execute(w, data)
-	if err != nil {
-		log.Printf("Ошибка рендеринга шаблона edit-section.html: %v", err)
+	if err := tmpl.Execute(w, data); err != nil {
+		log.Printf("Ошибка рендеринга edit-section.html: %v", err)
 		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
 	}
 }
 
 func renameSectionHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("INFO: renameSectionHandler called. Method: %s", r.Method)
-
 	if r.Method != http.MethodPost {
-		log.Printf("ERROR: Invalid method %s", r.Method)
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
-
-	log.Println("INFO: Parsing form...")
-	err := r.ParseForm()
-	if err != nil {
-		log.Printf("ERROR: Failed to parse form: %s", err)
+	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ошибка обработки формы", http.StatusBadRequest)
 		return
 	}
-
-	log.Printf("DEBUG: Full form data: %+v", r.Form)
-
 	oldSection := r.FormValue("old_section")
 	newSection := r.FormValue("new_section")
-	log.Printf("DEBUG: Form values - old_section: '%s', new_section: '%s'", oldSection, newSection)
-
 	if oldSection == "" || newSection == "" {
-		log.Printf("ERROR: Empty parameters - old: '%s', new: '%s'", oldSection, newSection)
 		http.Error(w, "Имена разделов не могут быть пустыми", http.StatusBadRequest)
 		return
 	}
-
 	if oldSection == "Общие" {
-		log.Printf("ERROR: Attempted to rename default section 'Общие'")
 		http.Error(w, "Нельзя переименовать раздел 'Общие'", http.StatusForbidden)
 		return
 	}
-
 	if !isValidFilename(newSection) {
-		log.Printf("ERROR: Invalid filename for new section: '%s'", newSection)
 		http.Error(w, "Недопустимые символы в названии раздела", http.StatusBadRequest)
 		return
 	}
-
 	oldPath := filepath.Join("notes", oldSection)
 	newPath := filepath.Join("notes", newSection)
-
-	log.Printf("DEBUG: Checking if old path exists: %s", oldPath)
 	if _, err := os.Stat(oldPath); os.IsNotExist(err) {
-		log.Printf("ERROR: Old section not found: %s", oldPath)
 		http.Error(w, "Раздел не найден", http.StatusNotFound)
 		return
 	}
-
-	log.Printf("DEBUG: Checking if new path already exists: %s", newPath)
 	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
-		log.Printf("ERROR: Section already exists: %s", newPath)
 		http.Error(w, "Раздел с таким именем уже существует", http.StatusBadRequest)
 		return
 	}
-
-	log.Printf("INFO: Attempting to rename %s to %s", oldPath, newPath)
-	err = os.Rename(oldPath, newPath)
-	if err != nil {
-		log.Printf("ERROR: Rename failed: %v", err)
+	if err := os.Rename(oldPath, newPath); err != nil {
 		http.Error(w, "Ошибка переименования раздела", http.StatusInternalServerError)
 		return
 	}
-
-	log.Printf("INFO: Successfully renamed section %s to %s", oldSection, newSection)
+	updateSectionsOrder(oldSection, newSection)
 	updateNotesCache()
 	setFlash(w, "Раздел успешно переименован")
-
-	redirectSection := url.QueryEscape(newSection)
-	log.Printf("DEBUG: Redirecting to /edit-section/%s", redirectSection)
-	http.Redirect(w, r, "/edit-section/"+redirectSection, http.StatusSeeOther)
+	http.Redirect(w, r, "/edit-section/"+url.QueryEscape(newSection), http.StatusSeeOther)
 }
 
 func moveNoteHandler(w http.ResponseWriter, r *http.Request) {
@@ -818,59 +830,41 @@ func moveNoteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
-
-	err := r.ParseForm()
-	if err != nil {
+	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Ошибка обработки формы", http.StatusBadRequest)
 		return
 	}
-
 	notePath := r.FormValue("note_path")
 	newSection := strings.TrimSpace(r.FormValue("new_section"))
-
 	if notePath == "" || newSection == "" {
 		http.Error(w, "Не указаны путь заметки или новый раздел", http.StatusBadRequest)
 		return
 	}
-
-	// Декодируем путь заметки
 	decodedNotePath, err := url.QueryUnescape(notePath)
 	if err != nil {
-		log.Printf("Ошибка декодирования пути заметки: %v", err)
 		decodedNotePath = notePath
 	}
-
 	oldFullPath := filepath.Join("notes", decodedNotePath+".txt")
 	newSectionPath := filepath.Join("notes", newSection)
 	newFullPath := filepath.Join(newSectionPath, filepath.Base(decodedNotePath)+".txt")
-
 	if _, err := os.Stat(oldFullPath); os.IsNotExist(err) {
 		http.Error(w, "Заметка не найдена", http.StatusNotFound)
 		return
 	}
-
-	log.Printf("Перемещение заметки: %s -> раздел %s", oldFullPath, newSection)
 	if err := os.MkdirAll(newSectionPath, 0755); err != nil {
-		log.Printf("Ошибка создания раздела %s: %v", newSectionPath, err)
 		http.Error(w, "Ошибка создания раздела", http.StatusInternalServerError)
 		return
 	}
-
 	if err := os.Rename(oldFullPath, newFullPath); err != nil {
-		log.Printf("Ошибка перемещения заметки %s -> %s: %v", oldFullPath, newFullPath, err)
 		http.Error(w, "Ошибка перемещения заметки", http.StatusInternalServerError)
 		return
 	}
-
 	updateNotesCache()
 	setFlash(w, "Заметка успешно перемещена")
-	log.Printf("Заметка успешно перемещена: %s -> %s", oldFullPath, newFullPath)
-
 	currentSection := filepath.Dir(decodedNotePath)
 	if currentSection == "." {
 		currentSection = "Общие"
 	}
-
 	http.Redirect(w, r, "/edit-section/"+url.QueryEscape(currentSection), http.StatusSeeOther)
 }
 
@@ -880,8 +874,7 @@ func importExportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tmpl := template.Must(template.ParseFiles("templates/import-export.html"))
-	err := tmpl.Execute(w, nil)
-	if err != nil {
+	if err := tmpl.Execute(w, nil); err != nil {
 		log.Printf("Ошибка рендеринга import-export.html: %v", err)
 		http.Error(w, "Внутренняя ошибка сервера", http.StatusInternalServerError)
 	}
@@ -894,23 +887,12 @@ func categoriesHandler(w http.ResponseWriter, r *http.Request) {
 		categories = append(categories, cat)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	jsonBytes := []byte("[")
-	for i, cat := range categories {
-		if i > 0 {
-			jsonBytes = append(jsonBytes, ',')
-		}
-		jsonBytes = append(jsonBytes, []byte(`"`+cat+`"`)...)
-	}
-	jsonBytes = append(jsonBytes, ']')
-	w.Write(jsonBytes)
+	json.NewEncoder(w).Encode(categories)
 }
 
 func exportTxtHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("Экспорт всех заметок в TXT")
 	notes := loadNotesCached()
 	var buffer bytes.Buffer
-
 	for section, notesList := range notes {
 		buffer.WriteString(fmt.Sprintf("=== %s ===\n\n", section))
 		for _, note := range notesList {
@@ -919,20 +901,15 @@ func exportTxtHandler(w http.ResponseWriter, r *http.Request) {
 			buffer.WriteString("\n---\n\n")
 		}
 	}
-
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", "attachment; filename=notes.txt")
 	w.Write(buffer.Bytes())
-	log.Println("Экспорт TXT завершён")
 }
 
 func exportDocHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("Экспорт всех заметок в DOC")
 	notes := loadNotesCached()
 	var rtfBuffer bytes.Buffer
-
 	rtfBuffer.WriteString("{\\rtf1\\ansi\\ansicpg1252\\uc1\\deff0 {\\fonttbl {\\f0 Times New Roman;}}\\f0\\fs24\n")
-
 	rtfEncode := func(s string) string {
 		var out strings.Builder
 		for _, r := range s {
@@ -949,30 +926,24 @@ func exportDocHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return out.String()
 	}
-
 	for section, notesList := range notes {
 		sectionTitle := rtfEncode(fmt.Sprintf("=== %s ===", section))
 		rtfBuffer.WriteString(fmt.Sprintf("\\b %s \\b0\\par\\par\n", sectionTitle))
-
 		for _, note := range notesList {
 			title := rtfEncode(fmt.Sprintf("Название: %s", note.Title))
 			rtfBuffer.WriteString(fmt.Sprintf("\\b %s \\b0\\par\n", title))
-
 			content := rtfEncode(note.Content)
 			content = strings.ReplaceAll(content, "\r\n", "\n")
 			content = strings.ReplaceAll(content, "\n", "\\par\n")
 			rtfBuffer.WriteString(content)
 			rtfBuffer.WriteString("\\par\\par\n")
-
 			rtfBuffer.WriteString("---\\par\\par\n")
 		}
 	}
 	rtfBuffer.WriteString("}")
-
 	w.Header().Set("Content-Type", "application/msword")
 	w.Header().Set("Content-Disposition", "attachment; filename=notes.doc")
 	w.Write(rtfBuffer.Bytes())
-	log.Println("Экспорт DOC завершён")
 }
 
 func importHandler(w http.ResponseWriter, r *http.Request) {
@@ -980,78 +951,70 @@ func importHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
-
-	err := r.ParseMultipartForm(10 << 20)
-	if err != nil {
-		log.Printf("Ошибка парсинга multipart при импорте: %v", err)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		http.Error(w, "Ошибка обработки файла", http.StatusBadRequest)
 		return
 	}
-
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		log.Printf("Ошибка получения файла при импорте: %v", err)
 		http.Error(w, "Файл не передан", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
-
 	category := strings.TrimSpace(r.FormValue("category"))
 	title := strings.TrimSpace(r.FormValue("title"))
-
 	if category == "" || title == "" {
 		http.Error(w, "Категория и название обязательны", http.StatusBadRequest)
 		return
 	}
-
 	if !isValidFilename(category) || !isValidFilename(title) {
 		http.Error(w, "Недопустимые символы в названии категории или заметки", http.StatusBadRequest)
 		return
 	}
-
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		log.Printf("Ошибка чтения файла при импорте: %v", err)
 		http.Error(w, "Ошибка чтения файла", http.StatusInternalServerError)
 		return
 	}
 	content := string(fileBytes)
-
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	if ext != ".txt" && ext != ".doc" {
 		http.Error(w, "Поддерживаются только файлы .txt и .doc", http.StatusBadRequest)
 		return
 	}
-
 	category = strings.Trim(category, "/\\")
 	if category == "." {
 		category = "Общие"
 	}
 	categoryPath := filepath.Join("notes", category)
-	err = os.MkdirAll(categoryPath, 0755)
-	if err != nil {
-		log.Printf("Ошибка создания папки категории %s: %v", categoryPath, err)
+	if err := os.MkdirAll(categoryPath, 0755); err != nil {
 		http.Error(w, "Ошибка создания категории", http.StatusInternalServerError)
 		return
 	}
-
 	fullPath := filepath.Join(categoryPath, title+".txt")
 	if _, err := os.Stat(fullPath); err == nil {
 		http.Error(w, "Заметка с таким названием уже существует", http.StatusBadRequest)
 		return
 	}
-
-	log.Printf("Импорт заметки: категория=%s, название=%s, файл=%s", category, title, header.Filename)
-	err = os.WriteFile(fullPath, []byte(content), 0644)
-	if err != nil {
-		log.Printf("Ошибка сохранения файла при импорте %s: %v", fullPath, err)
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
 		http.Error(w, "Ошибка сохранения заметки", http.StatusInternalServerError)
 		return
 	}
-
+	// Добавляем новый раздел в порядок
+	order := loadSectionsOrder()
+	found := false
+	for _, s := range order {
+		if s == category {
+			found = true
+			break
+		}
+	}
+	if !found {
+		order = append(order, category)
+		saveSectionsOrder(order)
+	}
 	updateNotesCache()
-	log.Printf("Заметка успешно импортирована: %s", fullPath)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"message":"Заметка успешно импортирована"}`))
+	json.NewEncoder(w).Encode(map[string]string{"message": "Заметка успешно импортирована"})
 }
