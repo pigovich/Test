@@ -1,7 +1,0 @@
-Нужно удалить полностью с ПК программу
-Потом нажать Win+R  
-ввести туда Appdata
-Открыть папку  Local
-Найти папку Linphone - удалить ее полностью.
-После чего скачать с сайта новую версию: https://download.linphone.org/releases/windows/latest_app_win64 
-Установить!

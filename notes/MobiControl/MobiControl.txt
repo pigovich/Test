@@ -1,4 +1,0 @@
-Открой терминал и введи команду:
-**sudo killall MobiControl;
-cd /Library/Application\ Support/MobiControl_Resources;sudo sh MCUninstaller.sh**
-Перезагрузи ПК и все ОК будет
